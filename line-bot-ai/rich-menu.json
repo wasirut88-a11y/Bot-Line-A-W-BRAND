@@ -5,27 +5,27 @@
   "chatBarText": "เปิดเมนู",
   "areas": [
     {
-      "bounds": { "x": 0, "y": 0, "width": 833, "height": 843 },
+      "bounds": { "x": 0, "y": 160, "width": 833, "height": 763 },
       "action": { "type": "message", "text": "วีต้า-ดี พลัส ราคาเท่าไหร่" }
     },
     {
-      "bounds": { "x": 833, "y": 0, "width": 834, "height": 843 },
+      "bounds": { "x": 833, "y": 160, "width": 834, "height": 763 },
       "action": { "type": "message", "text": "ซี-ไนท์ ราคาเท่าไหร่" }
     },
     {
-      "bounds": { "x": 1667, "y": 0, "width": 833, "height": 843 },
+      "bounds": { "x": 1667, "y": 160, "width": 833, "height": 763 },
       "action": { "type": "message", "text": "ยาสีฟันคอนฟิเด้นท์ ราคาเท่าไหร่" }
     },
     {
-      "bounds": { "x": 0, "y": 843, "width": 833, "height": 843 },
+      "bounds": { "x": 0, "y": 923, "width": 833, "height": 763 },
       "action": { "type": "message", "text": "ส่งกี่วัน ค่าส่งเท่าไหร่" }
     },
     {
-      "bounds": { "x": 833, "y": 843, "width": 834, "height": 843 },
+      "bounds": { "x": 833, "y": 923, "width": 834, "height": 763 },
       "action": { "type": "message", "text": "จ่ายเงินยังไง" }
     },
     {
-      "bounds": { "x": 1667, "y": 843, "width": 833, "height": 843 },
+      "bounds": { "x": 1667, "y": 923, "width": 833, "height": 763 },
       "action": { "type": "message", "text": "ขอแอดมิน" }
     }
   ]

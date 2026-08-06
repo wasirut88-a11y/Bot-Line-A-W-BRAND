@@ -93,6 +93,10 @@ const cells = menu.areas.map((area, i) => {
 
 const logo = dataUri('logo.png') ?? dataUri('logo.jpg');
 
+// Both derived from rich-menu.json so the artwork tracks the tap targets.
+const headerH = menu.areas[0].bounds.y;
+const splitY = menu.areas[3].bounds.y;
+
 const html = `<!doctype html>
 <meta charset="utf-8">
 <style>
@@ -139,10 +143,17 @@ const html = `<!doctype html>
   .split { position: absolute; left: 0; width: ${width}px; height: 3px;
            background: ${PALETTE.divider}; }
 
-  .logo { position: absolute; top: 34px; left: 50%; transform: translateX(-50%);
-          height: 78px; z-index: 5; opacity: 0.96; }
+  /* Header band above the first row of tap targets — the logo gets its own
+     space rather than floating over a product shot. Height comes from the first
+     area's y offset, so moving the rows in rich-menu.json moves the band too. */
+  .header { position: absolute; top: 0; left: 0; width: ${width}px; height: ${headerH}px;
+            display: flex; align-items: center; justify-content: center;
+            overflow: hidden; border-bottom: 3px solid ${PALETTE.divider}; }
+  /* The source PNG is a square with wide transparent margins, so it is sized well
+     past the band and the empty top and bottom are clipped away. */
+  .header img { height: ${Math.round(headerH * 1.62)}px; }
 </style>
-${logo ? `<img class="logo" src="${logo}">` : ''}
+${logo && headerH > 0 ? `<div class="header"><img src="${logo}"></div>` : ''}
 ${cells
   .map((c, i) => {
     const edge = c.x + c.width >= width ? ' edge' : '';
@@ -165,7 +176,7 @@ ${cells
     </div>`;
   })
   .join('\n')}
-<div class="split" style="top:${menu.areas[0].bounds.height}px"></div>
+<div class="split" style="top:${splitY}px"></div>
 `;
 
 if (!existsSync(assetsDir)) mkdirSync(assetsDir, { recursive: true });
