@@ -80,6 +80,13 @@ export function buildSystemInstruction(faqCsv: string): string {
 </out_of_scope_triggers>
 
 <output_format>
+ตอบกลับเป็น JSON ที่มี 2 ช่องเท่านั้น:
+- answer  = ข้อความที่ส่งให้คุณลูกค้าได้ทันที
+- sourceId = ค่า id ของแถวใน <faq> ที่ใช้ตอบ เช่น Q001
+             ถ้าตอบด้วย <default_message> หรือ <handoff_message> ให้เป็นสตริงว่าง
+             ห้ามเดา id ถ้าไม่ได้ใช้แถวนั้นจริง
+
+กติกาของข้อความในช่อง answer:
 - ภาษาไทยเท่านั้น
 - ข้อความล้วน ห้ามใช้ markdown ทุกชนิด (ห้าม ** ## - * \` และห้ามขึ้น bullet หรือหัวข้อ)
 - ห้ามขึ้นบรรทัดใหม่เกิน 1 ครั้ง

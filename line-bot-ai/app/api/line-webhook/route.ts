@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { messagingApi, validateSignature } from '@line/bot-sdk';
 import type { webhook } from '@line/bot-sdk';
 import { DEFAULT_REPLY, HANDOFF_REPLY, MAX_QUESTION_CHARS, requireEnv } from '@/lib/config';
-import { getFaqCsv } from '@/lib/sheet';
+import { findRowById, getFaqCsv } from '@/lib/sheet';
 import { askGemini } from '@/lib/gemini';
 import { detectHandoff, notifyAdmin } from '@/lib/handoff';
 import { contactCard, findHours, findPhone } from '@/lib/flex-cards';
@@ -33,7 +33,7 @@ export async function POST(req: Request) {
     for (const event of events) {
       // Stickers, images, follows and the rest are dropped without a reply.
       if (event.type === 'join') work.push(handleJoin(event));
-      else if (isReplyableTextMessage(event)) work.push(handleTextMessage(event));
+      else if (isReplyableTextMessage(event)) work.push(handleTextMessage(event, baseUrl(req)));
     }
     if (work.length > 0) await Promise.allSettled(work);
   } catch (error) {
@@ -101,7 +101,33 @@ async function handleJoin(event: webhook.JoinEvent): Promise<void> {
   ]);
 }
 
-async function handleTextMessage(event: TextMessageEvent): Promise<void> {
+/**
+ * Where product images are served from. Taken from the request LINE just made
+ * rather than an env var: it is by definition this deployment's public HTTPS
+ * origin, so it is correct on production and previews alike with nothing to
+ * configure or forget.
+ */
+function baseUrl(req: Request): string {
+  const host = req.headers.get('host');
+  return host ? `https://${host}` : '';
+}
+
+/**
+ * Resolves the sheet's `image` cell to a URL LINE will accept — HTTPS, and JPEG
+ * or PNG. A bare filename means public/products/; a full URL passes through so
+ * the owner can point at images hosted anywhere.
+ *
+ * Returns null when the value cannot be served, so a typo in the sheet costs the
+ * picture and not the reply.
+ */
+function imageUrl(image: string, base: string): string | null {
+  if (!image) return null;
+  const url = /^https?:\/\//i.test(image) ? image : `${base}/products/${image}`;
+  if (!url.startsWith('https://')) return null;
+  return /\.(jpe?g|png)$/i.test(url) ? url : null;
+}
+
+async function handleTextMessage(event: TextMessageEvent, base: string): Promise<void> {
   const question = event.message.text.trim().slice(0, MAX_QUESTION_CHARS);
   if (!question) return; // Whitespace-only: not worth a model call.
 
@@ -128,6 +154,8 @@ async function handleTextMessage(event: TextMessageEvent): Promise<void> {
 
   let reply = DEFAULT_REPLY;
   let sheetCacheHit = false;
+  let sourceId = '';
+  let photo: string | null = null;
   let telemetry = {
     finishReason: 'SKIPPED',
     thoughtsTokenCount: 0,
@@ -143,6 +171,7 @@ async function handleTextMessage(event: TextMessageEvent): Promise<void> {
 
     const result = await askGemini(question, faq.csv);
     reply = result.text;
+    sourceId = result.sourceId;
     telemetry = {
       finishReason: result.finishReason,
       thoughtsTokenCount: result.thoughtsTokenCount,
@@ -151,6 +180,11 @@ async function handleTextMessage(event: TextMessageEvent): Promise<void> {
       latencyMs: result.latencyMs,
       usedDefault: result.usedDefault,
     };
+
+    // The model reports which row it answered from; the image comes from the
+    // sheet, never from the model. It cannot invent a URL this way.
+    const row = findRowById(faq.rows, sourceId);
+    photo = row ? imageUrl(row.image, base) : null;
   } catch (error) {
     // Only reachable when the sheet is unavailable and nothing is cached. Calling
     // Gemini with no FAQ would invite exactly the invented answers the prompt
@@ -162,11 +196,19 @@ async function handleTextMessage(event: TextMessageEvent): Promise<void> {
     userId: shortId(userId),
     qLen: question.length,
     ...telemetry,
+    sourceId,
+    withImage: photo !== null,
     sheetCacheHit,
     totalMs: Date.now() - startedAt,
   });
 
-  await replyText(event.replyToken, reply);
+  const messages: messagingApi.Message[] = [{ type: 'text', text: reply }];
+  if (photo) {
+    // Same file for both: the product shots are 800px and well under LINE's
+    // 1MB preview ceiling, so a separate thumbnail would buy nothing.
+    messages.push({ type: 'image', originalContentUrl: photo, previewImageUrl: photo });
+  }
+  await send(event.replyToken, messages);
 }
 
 /**

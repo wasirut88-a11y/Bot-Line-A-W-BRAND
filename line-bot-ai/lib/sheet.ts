@@ -6,6 +6,11 @@ export interface FaqRow {
   question: string;
   keywords: string;
   answer: string;
+  /**
+   * Optional. A filename served from public/products/, or a full https URL.
+   * When present, the reply carries this image alongside the text.
+   */
+  image: string;
 }
 
 export interface FaqResult {
@@ -82,17 +87,27 @@ async function fetchActiveRows(): Promise<{ csv: string; rows: FaqRow[] }> {
     question: index('question'),
     keywords: index('keywords'),
     answer: index('answer'),
+    image: index('image'),
   };
   const cell = (row: string[], at: number) => (at === -1 ? '' : (row[at] ?? '').trim());
 
+  // The image column is deliberately kept out of the prompt CSV: the model
+  // never needs a filename to write an answer, and every column costs tokens on
+  // every request. The route looks it up from `rows` after the fact.
+  const promptColumns = header
+    .map((_, i) => i)
+    .filter((i) => i !== columns.image || columns.image === -1);
+  const trim = (row: string[]) => promptColumns.map((i) => row[i] ?? '');
+
   return {
-    csv: [header, ...active].map(serializeRow).join('\n'),
+    csv: [header, ...active].map((row) => serializeRow(trim(row))).join('\n'),
     rows: active.map((row) => ({
       id: cell(row, columns.id),
       category: cell(row, columns.category),
       question: cell(row, columns.question),
       keywords: cell(row, columns.keywords),
       answer: cell(row, columns.answer),
+      image: cell(row, columns.image),
     })),
   };
 }
@@ -157,6 +172,27 @@ function serializeRow(row: string[]): string {
       return /[",]/.test(flat) ? `"${flat.replace(/"/g, '""')}"` : flat;
     })
     .join(',');
+}
+
+/**
+ * Looks up the row an answer came from.
+ *
+ * Returns null when the id is missing OR matches more than one row. Duplicate
+ * ids happen easily — a person copying a block of rows in the sheet — and the
+ * consequence here is specific: an ambiguous id would attach the first matching
+ * row's photo, so a question about toothpaste could ship a picture of the eye
+ * supplement. No photo is a far smaller failure than the wrong product.
+ */
+export function findRowById(rows: FaqRow[], id: string): FaqRow | null {
+  if (!id) return null;
+  const matches = rows.filter((row) => row.id === id);
+  if (matches.length === 1) return matches[0];
+  if (matches.length > 1) {
+    console.warn(
+      JSON.stringify({ tag: 'line-bot', level: 'warn', event: 'sheet.duplicate-id', id }),
+    );
+  }
+  return null;
 }
 
 /** Test seam — lets the local harness exercise the request path without a sheet. */
