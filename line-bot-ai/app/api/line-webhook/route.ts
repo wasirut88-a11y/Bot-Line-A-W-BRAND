@@ -1,9 +1,12 @@
 import { NextResponse } from 'next/server';
 import { messagingApi, validateSignature } from '@line/bot-sdk';
 import type { webhook } from '@line/bot-sdk';
-import { DEFAULT_REPLY, MAX_QUESTION_CHARS, requireEnv } from '@/lib/config';
+import { DEFAULT_REPLY, HANDOFF_REPLY, MAX_QUESTION_CHARS, requireEnv } from '@/lib/config';
 import { getFaqCsv } from '@/lib/sheet';
 import { askGemini } from '@/lib/gemini';
+import { detectHandoff, notifyAdmin } from '@/lib/handoff';
+import { contactCard, findHours, findPhone } from '@/lib/flex-cards';
+import { errorMessage, log, shortId } from '@/lib/log';
 
 // Signature verification needs node:crypto, which the edge runtime lacks.
 export const runtime = 'nodejs';
@@ -19,6 +22,7 @@ export async function POST(req: Request) {
 
   if (!signature || !validateSignature(body, requireEnv('LINE_CHANNEL_SECRET'), signature)) {
     // Deliberately no body logging here — unverified input.
+    log.warn('webhook.invalid-signature');
     return new NextResponse('invalid signature', { status: 401 });
   }
 
@@ -31,13 +35,7 @@ export async function POST(req: Request) {
       await Promise.allSettled(textEvents.map(handleTextMessage));
     }
   } catch (error) {
-    console.error(
-      JSON.stringify({
-        tag: 'line-bot',
-        event: 'handler-error',
-        error: error instanceof Error ? error.message : String(error),
-      }),
-    );
+    log.error('webhook.error', { error: errorMessage(error) });
   }
 
   // Always 200. A 5xx makes LINE redeliver, and the customer gets the same
@@ -68,9 +66,28 @@ async function handleTextMessage(event: TextMessageEvent): Promise<void> {
   if (!question) return; // Whitespace-only: not worth a model call.
 
   // Group and room sources carry no userId; the log falls back to a placeholder.
-  const userId = event.source?.userId ?? 'unknown';
-  let sheetCacheHit = false;
+  const userId = event.source?.userId;
+  const startedAt = Date.now();
+
+  // Handoff is checked before anything else: it costs nothing, cannot be argued
+  // out of the decision the way a model can, and skips ~2s of latency on exactly
+  // the messages where a fast acknowledgement matters most.
+  const match = detectHandoff(question);
+  if (match) {
+    const notified = await notifyAdmin(userId, question, match);
+    await replyHandoff(event.replyToken);
+    log.info('handoff.routed', {
+      userId: shortId(userId),
+      qLen: question.length,
+      reason: match.reason,
+      adminNotified: notified,
+      latencyMs: Date.now() - startedAt,
+    });
+    return;
+  }
+
   let reply = DEFAULT_REPLY;
+  let sheetCacheHit = false;
   let telemetry = {
     finishReason: 'SKIPPED',
     thoughtsTokenCount: 0,
@@ -98,43 +115,77 @@ async function handleTextMessage(event: TextMessageEvent): Promise<void> {
     // Only reachable when the sheet is unavailable and nothing is cached. Calling
     // Gemini with no FAQ would invite exactly the invented answers the prompt
     // forbids, so skip straight to the default reply.
-    console.error(
-      JSON.stringify({
-        tag: 'line-bot',
-        event: 'sheet-unavailable',
-        error: error instanceof Error ? error.message : String(error),
-      }),
-    );
+    log.error('sheet.unavailable', { error: errorMessage(error) });
   }
 
-  console.log(
-    JSON.stringify({
-      tag: 'line-bot',
-      userId: userId.slice(0, 8),
-      qLen: question.length,
-      ...telemetry,
-      sheetCacheHit,
-    }),
-  );
+  log.info('reply.sent', {
+    userId: shortId(userId),
+    qLen: question.length,
+    ...telemetry,
+    sheetCacheHit,
+    totalMs: Date.now() - startedAt,
+  });
 
-  await reply_(event.replyToken, reply);
+  await replyText(event.replyToken, reply);
 }
 
-async function reply_(replyToken: string, text: string): Promise<void> {
+/**
+ * Handoff answers with a tappable contact card when the sheet has a phone number
+ * in it, and plain text otherwise. The fallback matters: a sheet edit that breaks
+ * the number format should cost the customer a call button, not the reply.
+ */
+async function replyHandoff(replyToken: string): Promise<void> {
   try {
-    const client = new messagingApi.MessagingApiClient({
-      channelAccessToken: requireEnv('LINE_CHANNEL_ACCESS_TOKEN'),
-    });
-    await client.replyMessage({ replyToken, messages: [{ type: 'text', text }] });
+    const faq = await getFaqCsv();
+    const phone = findPhone(faq.rows);
+    if (phone) {
+      await send(replyToken, [
+        { type: 'text', text: HANDOFF_REPLY },
+        contactCard(phone, findHours(faq.rows) ?? undefined),
+      ]);
+      return;
+    }
   } catch (error) {
-    // Reply tokens are single-use; a retry with the same token always fails.
-    console.error(
-      JSON.stringify({
-        tag: 'line-bot',
-        event: 'reply-failed',
-        replyToken: replyToken.slice(0, 8),
-        error: error instanceof Error ? error.message : String(error),
-      }),
-    );
+    log.warn('handoff.card-skipped', { error: errorMessage(error) });
   }
+  await replyText(replyToken, HANDOFF_REPLY);
+}
+
+async function replyText(replyToken: string, text: string): Promise<void> {
+  await send(replyToken, [{ type: 'text', text }]);
+}
+
+async function send(replyToken: string, messages: messagingApi.Message[]): Promise<void> {
+  const client = new messagingApi.MessagingApiClient({
+    channelAccessToken: requireEnv('LINE_CHANNEL_ACCESS_TOKEN'),
+  });
+
+  // Two attempts, and only when the first failed in a way that leaves the token
+  // unspent — a transport error or a 5xx. LINE reply tokens are single-use, so
+  // retrying after a 4xx is guaranteed to fail again and just burns the budget.
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      await client.replyMessage({ replyToken, messages });
+      return;
+    } catch (error) {
+      const status = httpStatus(error);
+      const retryable = status === undefined || status >= 500;
+      if (!retryable || attempt === 1) {
+        log.error('reply.failed', {
+          replyToken: replyToken.slice(0, 8),
+          status,
+          retried: attempt > 0,
+          error: errorMessage(error),
+        });
+        return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 300));
+    }
+  }
+}
+
+/** Pulls the HTTP status off an SDK error, when there is one. */
+function httpStatus(error: unknown): number | undefined {
+  const status = (error as { status?: unknown })?.status;
+  return typeof status === 'number' ? status : undefined;
 }

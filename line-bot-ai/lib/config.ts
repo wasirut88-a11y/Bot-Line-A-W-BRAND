@@ -16,6 +16,13 @@ import { ThinkingLevel } from '@google/genai';
 /** Shown whenever the bot cannot answer from the FAQ, for any reason. */
 export const DEFAULT_REPLY = 'รอสักครู่นะคะ เดี๋ยวแอดมินตัวจริงมาตอบให้ค่ะ 🙏';
 
+/**
+ * Sent when a message is routed to a human — complaints, refunds, adverse
+ * reactions, wholesale. Deliberately distinct from DEFAULT_REPLY so the logs can
+ * tell "we had no answer" apart from "a person is taking this".
+ */
+export const HANDOFF_REPLY = 'ขอแอดมินตัวจริงติดต่อกลับนะคะ 🙏';
+
 export const MODEL = 'gemini-3.5-flash';
 
 /**

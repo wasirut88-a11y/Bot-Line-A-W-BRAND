@@ -1,8 +1,18 @@
 import { ACTIVE_STATUS, SHEET_CACHE_TTL_MS, SHEET_TIMEOUT_MS, requireEnv } from './config';
 
+export interface FaqRow {
+  id: string;
+  category: string;
+  question: string;
+  keywords: string;
+  answer: string;
+}
+
 export interface FaqResult {
   /** CSV of active rows, header included. Ready to drop into the prompt. */
   csv: string;
+  /** The same active rows, parsed — used by the Flex card builders. */
+  rows: FaqRow[];
   /** True when served from cache without a network round trip. */
   cacheHit: boolean;
   /** True when the network failed and a previously cached copy was served. */
@@ -14,30 +24,30 @@ export interface FaqResult {
  * each keeps its own copy. At low traffic that means the sheet is fetched more
  * often than the 60s TTL suggests, which is fine at this scale.
  */
-let cache: { csv: string; fetchedAt: number } | null = null;
+let cache: { csv: string; rows: FaqRow[]; fetchedAt: number } | null = null;
 
 export async function getFaqCsv(): Promise<FaqResult> {
   if (cache && Date.now() - cache.fetchedAt < SHEET_CACHE_TTL_MS) {
-    return { csv: cache.csv, cacheHit: true, stale: false };
+    return { csv: cache.csv, rows: cache.rows, cacheHit: true, stale: false };
   }
 
   try {
-    const csv = await fetchActiveRows();
-    cache = { csv, fetchedAt: Date.now() };
-    return { csv, cacheHit: false, stale: false };
+    const { csv, rows } = await fetchActiveRows();
+    cache = { csv, rows, fetchedAt: Date.now() };
+    return { csv, rows, cacheHit: false, stale: false };
   } catch (error) {
     // A stale answer beats no answer, so fall back to whatever is still held.
     if (cache) {
       console.warn(
         JSON.stringify({ tag: 'line-bot', event: 'sheet-stale', error: String(error) }),
       );
-      return { csv: cache.csv, cacheHit: false, stale: true };
+      return { csv: cache.csv, rows: cache.rows, cacheHit: false, stale: true };
     }
     throw error;
   }
 }
 
-async function fetchActiveRows(): Promise<string> {
+async function fetchActiveRows(): Promise<{ csv: string; rows: FaqRow[] }> {
   const response = await fetch(requireEnv('SHEET_CSV_URL'), {
     cache: 'no-store',
     signal: AbortSignal.timeout(SHEET_TIMEOUT_MS),
@@ -64,7 +74,27 @@ async function fetchActiveRows(): Promise<string> {
     throw new Error('Sheet has no active rows');
   }
 
-  return [header, ...active].map(serializeRow).join('\n');
+  const index = (name: string) =>
+    header.findIndex((column) => column.trim().toLowerCase() === name);
+  const columns = {
+    id: index('id'),
+    category: index('category'),
+    question: index('question'),
+    keywords: index('keywords'),
+    answer: index('answer'),
+  };
+  const cell = (row: string[], at: number) => (at === -1 ? '' : (row[at] ?? '').trim());
+
+  return {
+    csv: [header, ...active].map(serializeRow).join('\n'),
+    rows: active.map((row) => ({
+      id: cell(row, columns.id),
+      category: cell(row, columns.category),
+      question: cell(row, columns.question),
+      keywords: cell(row, columns.keywords),
+      answer: cell(row, columns.answer),
+    })),
+  };
 }
 
 /**

@@ -21,6 +21,15 @@ npm run dev
 | `GEMINI_API_KEY`            | Google AI Studio → API keys                                |
 | `SHEET_CSV_URL`             | Sheet → File → Share → Publish to web → this sheet → `.csv` |
 
+## Scripts
+
+```bash
+npm run check:gemini              # credentials preflight through the real code path
+npm run test:chat                 # 20-case conversation regression suite
+npm run test:chat injection       # one category: direct paraphrase out-of-faq injection handoff
+npm run richmenu                  # install rich-menu.json + rich-menu.jpg onto the OA
+```
+
 ## Checking the credentials
 
 ```bash
@@ -67,12 +76,18 @@ POST /api/line-webhook
   1. read raw body + x-line-signature
   2. verify signature ......................... fail → 401, body never logged
   3. keep only text messages with a replyToken   others → dropped silently
-  4. getFaqCsv() .............................. 60s cache, 5s timeout
-  5. askGemini() .............................. 8s timeout
+  4. detectHandoff() .......................... hit → notify admin, reply, STOP
+  5. getFaqCsv() .............................. 60s cache, 5s timeout
+  6. askGemini() .............................. 8s timeout
      finishReason !== STOP → DEFAULT_REPLY
-  6. replyMessage()
-  7. 200 — always
+  7. replyMessage()
+  8. 200 — always
 ```
+
+Step 4 runs before Gemini deliberately: keyword routing costs nothing, cannot be
+argued out of its decision the way a model can, and saves ~2s on exactly the
+messages where a fast acknowledgement matters most — complaints and adverse
+reaction reports.
 
 Step 7 is not optional. A 5xx makes LINE redeliver the event, and the customer
 receives the same answer several times.
@@ -80,12 +95,17 @@ receives the same answer several times.
 ## Layout
 
 ```
-app/api/line-webhook/route.ts   signature check, event filtering, orchestration, logging
+app/api/line-webhook/route.ts   signature check, handoff routing, orchestration, logging
 lib/config.ts                   every tunable — timeouts, model, limits
-lib/prompt.ts                   the system instruction
+lib/prompt.ts                   system instruction: guardrails + reasoning protocol
 lib/gemini.ts                   Gemini call, finishReason handling, sanitizing
 lib/sheet.ts                    CSV fetch, RFC 4180 parse, status filter, cache
+lib/handoff.ts                  keyword routing to a human + admin group notify
+lib/flex-cards.ts               Flex Message builders
+lib/log.ts                      structured logging helper
 ```
+
+`CLAUDE.md` holds the repo conventions, `PRD.md` what the bot must and must not do.
 
 ## Design notes
 
@@ -108,7 +128,15 @@ lib/sheet.ts                    CSV fetch, RFC 4180 parse, status filter, cache
 - **Stale-while-error.** If the sheet fetch fails but a previous copy is cached,
   the old copy is used. With no cache at all, Gemini is skipped entirely — an
   empty FAQ would invite exactly the invented answers the prompt forbids.
-- **Reply tokens are single-use.** A failed send is logged, never retried.
+- **Reply tokens are single-use.** A send is retried once, and only when the
+  failure leaves the token unspent — a transport error or a 5xx. Retrying after a
+  4xx is guaranteed to fail again and just burns the time budget.
+- **Prompt injection defense is in `<guardrails>`, not after `<faq>`** — putting it
+  last would work too, but it would break the cacheable prefix. The customer's
+  message is framed as data to read, never instructions to follow.
+- **The default reply must be sent verbatim.** "The FAQ has no row for this" is
+  not the same as "this is not true", so the bot is forbidden from explaining the
+  gap — that is how "no branch listed in Phuket" becomes "we have no Phuket branch".
 
 ## Logs
 

@@ -9,7 +9,9 @@
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
-    "check:gemini": "tsx scripts/check-gemini.mts"
+    "check:gemini": "tsx scripts/check-gemini.mts",
+    "test:chat": "tsx scripts/test-conversations.mts",
+    "richmenu": "bash scripts/install-rich-menu.sh"
   },
   "dependencies": {
     "@google/genai": "^2.16.0",

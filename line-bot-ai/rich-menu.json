@@ -1,0 +1,32 @@
+{
+  "size": { "width": 2500, "height": 1686 },
+  "selected": true,
+  "name": "A&W BRAND Main Menu",
+  "chatBarText": "เปิดเมนู",
+  "areas": [
+    {
+      "bounds": { "x": 0, "y": 0, "width": 833, "height": 843 },
+      "action": { "type": "message", "text": "วีต้า-ดี พลัส ราคาเท่าไหร่" }
+    },
+    {
+      "bounds": { "x": 833, "y": 0, "width": 834, "height": 843 },
+      "action": { "type": "message", "text": "ซี-ไนท์ ราคาเท่าไหร่" }
+    },
+    {
+      "bounds": { "x": 1667, "y": 0, "width": 833, "height": 843 },
+      "action": { "type": "message", "text": "ยาสีฟันคอนฟิเด้นท์ ราคาเท่าไหร่" }
+    },
+    {
+      "bounds": { "x": 0, "y": 843, "width": 833, "height": 843 },
+      "action": { "type": "message", "text": "ส่งกี่วัน ค่าส่งเท่าไหร่" }
+    },
+    {
+      "bounds": { "x": 833, "y": 843, "width": 834, "height": 843 },
+      "action": { "type": "message", "text": "จ่ายเงินยังไง" }
+    },
+    {
+      "bounds": { "x": 1667, "y": 843, "width": 833, "height": 843 },
+      "action": { "type": "message", "text": "ขอแอดมิน" }
+    }
+  ]
+}
