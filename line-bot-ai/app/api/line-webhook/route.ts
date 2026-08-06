@@ -28,12 +28,14 @@ export async function POST(req: Request) {
 
   try {
     const events: webhook.Event[] = JSON.parse(body).events ?? [];
-    const textEvents = events.filter(isReplyableTextMessage);
 
-    // Stickers, images, follows and the rest are dropped without a reply.
-    if (textEvents.length > 0) {
-      await Promise.allSettled(textEvents.map(handleTextMessage));
+    const work: Promise<unknown>[] = [];
+    for (const event of events) {
+      // Stickers, images, follows and the rest are dropped without a reply.
+      if (event.type === 'join') work.push(handleJoin(event));
+      else if (isReplyableTextMessage(event)) work.push(handleTextMessage(event));
     }
+    if (work.length > 0) await Promise.allSettled(work);
   } catch (error) {
     log.error('webhook.error', { error: errorMessage(error) });
   }
@@ -49,16 +51,54 @@ type TextMessageEvent = webhook.MessageEvent & {
 };
 
 /**
- * The SDK marks `replyToken` optional because a few event kinds arrive without
- * one. No token means nothing to reply to, so those are filtered out here rather
- * than failing later at the send.
+ * Only 1:1 chats are answered.
+ *
+ * The bot sits in the admin group so it can push handoff notifications there. If
+ * it also replied to messages, every line the admins typed to each other would
+ * cost a Gemini call and a reply nobody asked for.
+ *
+ * `replyToken` is optional on the SDK type because a few event kinds arrive
+ * without one; no token means nothing to reply to.
  */
 function isReplyableTextMessage(event: webhook.Event): event is TextMessageEvent {
   return (
     event.type === 'message' &&
     event.message.type === 'text' &&
+    event.source?.type === 'user' &&
     typeof event.replyToken === 'string'
   );
+}
+
+/**
+ * Fired when someone adds the bot to a group or multi-person chat.
+ *
+ * The group ID is only ever revealed here, and it is the value ADMIN_GROUP_ID
+ * needs — so it goes to both the logs and the chat itself, because reading it off
+ * your phone beats digging through Vercel logs during setup.
+ *
+ * The ID is an identifier, not a credential: pushing to a group still requires
+ * the channel access token.
+ */
+async function handleJoin(event: webhook.JoinEvent): Promise<void> {
+  const source = event.source;
+  const id = source?.type === 'group' ? source.groupId : source?.type === 'room' ? source.roomId : undefined;
+
+  log.info('joined', { sourceType: source?.type, id });
+
+  if (!id) return;
+  await send(event.replyToken, [
+    {
+      type: 'text',
+      text: [
+        'สวัสดีค่ะ แอดมินบอทเข้ากลุ่มแล้วนะคะ',
+        '',
+        'ID ของกลุ่มนี้คือ',
+        id,
+        '',
+        'นำไปใส่เป็น ADMIN_GROUP_ID ใน Vercel แล้ว Redeploy เพื่อเปิดการแจ้งเตือนค่ะ',
+      ].join('\n'),
+    },
+  ]);
 }
 
 async function handleTextMessage(event: TextMessageEvent): Promise<void> {
