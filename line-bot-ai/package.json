@@ -11,7 +11,8 @@
     "typecheck": "tsc --noEmit",
     "check:gemini": "tsx scripts/check-gemini.mts",
     "test:chat": "tsx scripts/test-conversations.mts",
-    "richmenu": "bash scripts/install-rich-menu.sh"
+    "richmenu": "bash scripts/install-rich-menu.sh",
+    "richmenu:build": "node scripts/build-rich-menu.mjs"
   },
   "dependencies": {
     "@google/genai": "^2.16.0",
