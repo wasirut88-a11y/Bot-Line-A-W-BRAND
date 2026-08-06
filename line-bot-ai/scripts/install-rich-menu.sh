@@ -53,14 +53,39 @@ fi
 echo "  id: $MENU_ID"
 
 echo "→ อัปโหลดรูป..."
-curl -sS -X POST "https://api-data.line.me/v2/bot/richmenu/$MENU_ID/content" \
+CODE=$(curl -sS -o /tmp/line-rm-upload.txt -w '%{http_code}' \
+  -X POST "https://api-data.line.me/v2/bot/richmenu/$MENU_ID/content" \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: image/jpeg" \
-  --data-binary @"$MENU_IMAGE" >/dev/null
+  --data-binary @"$MENU_IMAGE")
+if [[ "$CODE" != "200" ]]; then
+  echo "❌ อัปโหลดรูปไม่สำเร็จ (HTTP $CODE): $(cat /tmp/line-rm-upload.txt)" >&2
+  exit 1
+fi
 
 echo "→ ตั้งเป็นเมนูเริ่มต้นของทุกคน..."
-curl -sS -X POST "https://api.line.me/v2/bot/user/all/richmenu/$MENU_ID" \
-  -H "Authorization: Bearer $TOKEN" >/dev/null
+# Content-Length: 0 is required. This POST carries no body, and LINE's CDN
+# rejects a bodyless POST without it at the edge with 411 Length Required —
+# the request never reaches LINE at all.
+CODE=$(curl -sS -o /tmp/line-rm-default.txt -w '%{http_code}' \
+  -X POST "https://api.line.me/v2/bot/user/all/richmenu/$MENU_ID" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Length: 0")
+if [[ "$CODE" != "200" ]]; then
+  echo "❌ ตั้งเป็นเมนูเริ่มต้นไม่สำเร็จ (HTTP $CODE): $(cat /tmp/line-rm-default.txt)" >&2
+  exit 1
+fi
 
-echo "✅ ติดตั้งเรียบร้อย: $MENU_ID"
+# Ask LINE what the default actually is rather than trusting the write. An
+# earlier version of this script reported success while the final step had
+# silently failed, and the menu never appeared for anyone.
+ACTIVE=$(curl -sS https://api.line.me/v2/bot/user/all/richmenu \
+  -H "Authorization: Bearer $TOKEN" | jq -r '.richMenuId // empty')
+if [[ "$ACTIVE" != "$MENU_ID" ]]; then
+  echo "❌ ยืนยันไม่ผ่าน — เมนูเริ่มต้นตอนนี้คือ '${ACTIVE:-ไม่มี}' ไม่ใช่ $MENU_ID" >&2
+  exit 1
+fi
+
+rm -f /tmp/line-rm-upload.txt /tmp/line-rm-default.txt
+echo "✅ ติดตั้งและยืนยันแล้ว: $MENU_ID"
 echo "   ปิดแล้วเปิดแชท LINE ใหม่เพื่อให้เมนูขึ้น"
