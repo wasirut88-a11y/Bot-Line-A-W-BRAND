@@ -1,0 +1,27 @@
+{
+  "name": "line-bot-ai",
+  "version": "0.1.0",
+  "private": true,
+  "description": "LINE bot for A&W BRAND — answers customer FAQ with Gemini",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "typecheck": "tsc --noEmit",
+    "check:gemini": "tsx scripts/check-gemini.mts"
+  },
+  "dependencies": {
+    "@google/genai": "^2.16.0",
+    "@line/bot-sdk": "^11.2.0",
+    "next": "14.2.35",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@types/react": "^18.3.17",
+    "tsx": "^4.23.9",
+    "typescript": "^5.7.2"
+  }
+}
