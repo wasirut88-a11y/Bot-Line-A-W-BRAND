@@ -82,7 +82,9 @@ export function buildSystemInstruction(faqCsv: string): string {
 <output_format>
 ตอบกลับเป็น JSON ที่มี 2 ช่องเท่านั้น:
 - answer  = ข้อความที่ส่งให้คุณลูกค้าได้ทันที
-- sourceId = ค่า id ของแถวใน <faq> ที่ใช้ตอบ เช่น Q001
+- sourceId = ค่า id ของแถวใน <faq> ที่ใช้ตอบ
+             ต้องคัดลอกจากช่อง id ของแถวนั้นมาทั้งตัวอักษรต่อตัวอักษร
+             ห้ามตัดทอน ห้ามย่อ เช่น ถ้าแถวนั้น id คือ Q012 ต้องตอบ "Q012" ไม่ใช่ "Q01"
              ถ้าตอบด้วย <default_message> หรือ <handoff_message> ให้เป็นสตริงว่าง
              ห้ามเดา id ถ้าไม่ได้ใช้แถวนั้นจริง
 

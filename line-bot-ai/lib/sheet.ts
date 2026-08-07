@@ -187,11 +187,19 @@ export function findRowById(rows: FaqRow[], id: string): FaqRow | null {
   if (!id) return null;
   const matches = rows.filter((row) => row.id === id);
   if (matches.length === 1) return matches[0];
+
   if (matches.length > 1) {
     console.warn(
       JSON.stringify({ tag: 'line-bot', level: 'warn', event: 'sheet.duplicate-id', id }),
     );
+    return null;
   }
+
+  // No match at all. Seen in production: the model returned "Q01" for a row
+  // whose id is "Q012". Deliberately NOT resolved by prefix — "Q01" is an
+  // equally good prefix of Q010 through Q019, and picking one would attach an
+  // arbitrary row's photo. Logged instead, so a recurring pattern is visible.
+  console.warn(JSON.stringify({ tag: 'line-bot', level: 'warn', event: 'sheet.unknown-id', id }));
   return null;
 }
 
