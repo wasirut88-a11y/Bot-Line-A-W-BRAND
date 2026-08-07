@@ -122,9 +122,18 @@ function baseUrl(req: Request): string {
  */
 function imageUrl(image: string, base: string): string | null {
   if (!image) return null;
-  const url = /^https?:\/\//i.test(image) ? image : `${base}/products/${image}`;
-  if (!url.startsWith('https://')) return null;
-  return /\.(jpe?g|png)$/i.test(url) ? url : null;
+  const raw = /^https?:\/\//i.test(image) ? image : `${base}/products/${image}`;
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    return null;
+  }
+  if (url.protocol !== 'https:') return null;
+  // Check the extension on the path, not the whole string — hosted images very
+  // often carry a query string (?v=2, ?width=800), and matching the raw URL
+  // would reject every one of them.
+  return /\.(jpe?g|png)$/i.test(url.pathname) ? url.href : null;
 }
 
 async function handleTextMessage(event: TextMessageEvent, base: string): Promise<void> {
