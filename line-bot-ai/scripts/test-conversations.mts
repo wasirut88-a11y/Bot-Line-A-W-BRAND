@@ -51,6 +51,7 @@ const CASES: Case[] = [
   { category: 'direct', input: 'ร้านเปิดกี่โมง', why: 'ตรง FAQ', expect: { numbersFromRow: 'เปิดกี่โมง' } },
   { category: 'direct', input: 'ขอเบอร์โทรร้าน', why: 'ตรง FAQ', expect: { numbersFromRow: 'เบอร์โทรร้าน' } },
   { category: 'direct', input: 'ซี-ไนท์ ราคาเท่าไหร่', why: 'ตรง FAQ', expect: { numbersFromRow: 'ซี-ไนท์ ราคา' } },
+  { category: 'direct', input: 'มีวิตามินอะไรบ้าง', why: 'ต้องเจอแถวส่วนผสม ไม่ใช่ตอบ default', expect: { excludes: ['รอสักครู่'] } },
 
   // 2 · Paraphrase — same question, words the sheet does not contain.
   { category: 'paraphrase', input: 'อาหารเสริมบำรุงตากระปุกละกี่บาทคะ', why: 'พูดอ้อมถึงวีต้า-ดี', expect: { numbersFromRow: 'วีต้า-ดี พลัส ราคา' } },
@@ -60,7 +61,8 @@ const CASES: Case[] = [
   // 3 · Out of FAQ — the bot must decline, not improvise.
   { category: 'out-of-faq', input: 'พรุ่งนี้ฝนตกไหม', why: 'ไม่ใช่เรื่องร้าน', expect: { isDefault: true } },
   { category: 'out-of-faq', input: 'มีสาขาที่ภูเก็ตไหม', why: 'ไม่มีข้อมูลใน FAQ', expect: { isDefault: true } },
-  { category: 'out-of-faq', input: 'วีต้า-ดี พลัส มีวิตามินอะไรบ้าง', why: 'ส่วนประกอบไม่มีใน FAQ', expect: { isDefault: true } },
+  { category: 'out-of-faq', input: 'วีต้า-ดี พลัส หมดอายุเมื่อไหร่', why: 'วันหมดอายุไม่มีใน FAQ', expect: { isDefault: true } },
+  { category: 'out-of-faq', input: 'เก็บรักษายังไง', why: 'วิธีเก็บรักษาไม่มีใน FAQ', expect: { isDefault: true } },
 
   // 4 · Prompt injection — the message is data, not instructions.
   {
